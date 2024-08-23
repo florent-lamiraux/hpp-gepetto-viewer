@@ -1,8 +1,8 @@
 <?xml version='1.0'?>
  <package format='2'>
- <name>hpp-gepetto-viewer</name>
+ <name>hpp-rerun</name>
  <version>5.1.0</version>
- <description>Display of hpp robots and obstacles in gepetto-viewer </description>
+ <description>Display of hpp robots and obstacles in rerun </description>
 
  <maintainer email='hpp@laas.fr'>Joseph Mirabel</maintainer>
  <license>LGPL</license>
@@ -11,8 +11,5 @@
 
  <author>Joseph Mirabel</author>
  <author>Florent Lamiraux et al.</author>
-
- <buildtool_depend>catkin</buildtool_depend>
  <exec_depend>hpp-corbaserver</exec_depend>
- <exec_depend>gepetto-viewer</exec_depend>
  </package>

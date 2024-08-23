@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (c) 2014 CNRS
+# Copyright (c) 2014 - 2024 CNRS
 # Author: Florent Lamiraux
 #
 # This file is part of hpp-gepetto-viewer.
@@ -18,13 +18,12 @@
 # <http://www.gnu.org/licenses/>.
 
 import math
+import numpy as np
 
 import omniORB.any
 from hpp.quaternion import Quaternion
 
-from gepetto.color import Color
-from gepetto.corbaserver.client import _GhostGraphicalInterface
-
+import rerun as rr
 
 class _GhostViewerClient:
     def __init__(self):
@@ -140,17 +139,6 @@ class Viewer:
         self.problemSolver = problemSolver
         self.robot = problemSolver.robot
         self.collisionURDF = collisionURDF
-        self.color = Color()
-        if not viewerClient:
-            try:
-                viewerClient = GuiClient()
-            except Exception as e:
-                if ghost:
-                    print("Failed to connect to the viewer.")
-                    print("Check whether gepetto-gui is properly started.")
-                    viewerClient = _GhostViewerClient()
-                else:
-                    raise e
         self.createWindowAndScene(viewerClient, "hpp_")
         self.client = viewerClient
         self.callbacks = []
@@ -221,23 +209,57 @@ class Viewer:
             children = self.client.gui.getGroupNodeList(n)
             self._removeLightSources(children)
 
+    # Retrieve the path to the input file from a string containing "package://"
+    def _retrieveFilename(self, inputFilename):
+        if inputFilename.startswith("file://"):
+            return inputFilename[7:]
+        if inputFilename.startswith("package://"):
+            filename = inputFilename[10:]
+            import os
+            paths = os.getenv("ROS_PACKAGE_PATH").split(":")
+            for path in paths:
+                fn = path + "/" + filename
+                if os.path.isfile(fn):
+                    return fn
+            raise FileNotFoundError(f'Could not find file from "{inputFilename}.')
+        else:
+            return inputFilename
+
+    def _addURDF(self, filename):
+        from urdf_parser_py.urdf import URDF
+        with open(filename, "r") as f:
+            urdfTree = URDF.from_xml_string(f.read())
+        for link in urdfTree.links:
+            for visual in link.visuals:
+                if hasattr(visual, 'geometry'):
+                    meshFilename = self._retrieveFilename(visual.geometry.filename)
+                    from pyassimp import load
+                    print(f"meshFilename = {meshFilename}")
+                    with load(meshFilename) as scene:
+                        for i, mesh in enumerate(scene.meshes):
+                            name = f"{self.displayName}/{link.name}_{i}"
+                            color = mesh.material.properties[('diffuse',0)]
+                            mesh.colors = np.empty((mesh.vertices.shape[0],4), dtype=np.float32)
+                            for j in range(mesh.colors.shape[0]):
+                                mesh.colors[j,:] = color
+                            rr.log(name, rr.Mesh3D(
+                                vertex_positions = mesh.vertices,
+                                vertex_normals = mesh.normals,
+                                vertex_colors = mesh.colors,
+                                triangle_indices = mesh.faces))
+
+
     def _initDisplay(self):
         urdfFilename, srdfFilename = self.robot.urdfSrdfFilenames()
-        self.client.gui.addURDF(self.displayName, urdfFilename)
-        # Remove lighting from meshes
-        self._removeLightSources(self.client.gui.getGroupNodeList(self.displayName))
+        filename = self._retrieveFilename(urdfFilename)
+        self._addURDF(filename)
         if self.collisionURDF:
             self.toggleVisual(False)
-        self.client.gui.addToGroup(self.displayName, self.sceneName)
+        # todo: self.client.gui.addToGroup(self.displayName, self.sceneName)
 
     def createWindowAndScene(self, viewerClient, name):
-        from gepetto import Error as GepettoError
-
         self.windowName = "scene_" + name
-        try:
-            self.windowId = viewerClient.gui.getWindowID(self.windowName)
-        except GepettoError:
-            self.windowId = viewerClient.gui.createWindow(self.windowName)
+        rr.init(self.windowName, spawn = True)
         self.sceneName = self.windowName
 
     def addCallback(self, cb):
